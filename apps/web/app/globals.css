@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 14% 97%;
+    --foreground: 240 10% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 12%;
+
+    --primary: 211 100% 45%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 14% 94%;
+    --secondary-foreground: 240 10% 16%;
+
+    --muted: 240 14% 94%;
+    --muted-foreground: 240 5% 48%;
+
+    --accent: 240 14% 91%;
+    --accent-foreground: 240 10% 16%;
+
+    --destructive: 4 90% 58%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 12% 87%;
+    --input: 240 12% 87%;
+    --ring: 211 100% 45%;
+
+    --radius: 1rem;
+
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 240 10% 16%;
+    --sidebar-accent: 240 14% 95%;
+    --sidebar-accent-foreground: 240 10% 12%;
+    --sidebar-border: 240 12% 88%;
+
+    --brand: 48 100% 50%;
+    --brand-foreground: 240 10% 12%;
+    --panel: 0 0% 100%;
+    --panel-soft: 240 14% 98%;
+    --shadow-soft: 0 10px 35px rgba(15, 23, 42, 0.06);
+    --shadow-panel: 0 18px 45px rgba(15, 23, 42, 0.08);
+    --glass-border: rgba(255, 255, 255, 0.5);
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+    box-sizing: border-box;
+  }
+
+  body {
+    background:
+      radial-gradient(circle at top left, rgba(255, 204, 0, 0.16), transparent 28%),
+      radial-gradient(circle at top right, rgba(0, 113, 227, 0.1), transparent 32%),
+      linear-gradient(180deg, #f9fafc 0%, #f3f4f8 100%);
+    color: hsl(var(--foreground));
+    font-family: var(--font-inter), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-weight: 600;
+    letter-spacing: -0.025em;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground));
+  }
+}
+
+@layer components {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow: var(--shadow-soft);
+    @apply rounded-[20px] text-card-foreground;
+  }
+
+  .gradient-text {
+    background-image: linear-gradient(135deg, #1d4ed8 0%, #0f766e 50%, #f59e0b 100%);
+    @apply bg-clip-text text-transparent;
+  }
+
+  .gradient-border {
+    background: linear-gradient(rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95)) padding-box,
+      linear-gradient(135deg, #0071e3, #ffcc00) border-box;
+    border: 1px solid transparent;
+  }
+
+  .glow-primary {
+    box-shadow: 0 12px 30px rgba(0, 113, 227, 0.18);
+  }
+
+  .animate-in {
+    @apply animate-fade-in;
+  }
+
+  .sidebar-link {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all duration-150 cursor-pointer;
+  }
+
+  .sidebar-link.active {
+    background: rgba(0, 113, 227, 0.08);
+    border: 1px solid rgba(0, 113, 227, 0.12);
+    @apply text-primary;
+  }
+
+  .metric-card {
+    @apply glass-card p-5 transition-all duration-200;
+  }
+
+  .metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .status-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .skeleton {
+    @apply bg-gradient-to-r from-muted via-muted/50 to-muted bg-[length:200%_100%] animate-shimmer rounded;
+  }
+
+  .surface-panel {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    box-shadow: var(--shadow-panel);
+    @apply rounded-[28px];
+  }
+
+  .pill-button {
+    @apply inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all duration-200;
+    background: rgba(255, 255, 255, 0.7);
+    border-color: rgba(29, 29, 31, 0.08);
+    color: hsl(var(--foreground));
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+  }
+
+  .pill-button:hover {
+    background: rgba(255, 255, 255, 0.96);
+    transform: translateY(-1px);
+  }
+
+  .pill-button-primary {
+    background: hsl(var(--brand));
+    border-color: rgba(255, 204, 0, 0.9);
+    color: hsl(var(--brand-foreground));
+  }
+
+  .pill-button-primary:hover {
+    background: #f2c200;
+  }
+
+  .app-shell {
+    @apply relative min-h-screen overflow-hidden;
+  }
+
+  .page-shell {
+    @apply relative z-10 flex h-screen p-3 md:p-5;
+  }
+
+  .page-shell::before {
+    content: "";
+    position: absolute;
+    inset: 18px;
+    border-radius: 36px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.1));
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    pointer-events: none;
+  }
+}

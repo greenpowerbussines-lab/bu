@@ -1,0 +1,439 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================
+// ENUMS
+// =============================================
+
+enum TaxRegime {
+  USN       // Упрощённая система налогообложения
+  OSN       // Общая система налогообложения
+  PATENT    // Патентная система
+  ENVD      // Единый налог на вменённый доход
+  ESN       // Единый сельскохозяйственный налог
+}
+
+enum Plan {
+  STARTER    // $29/mo — Modules 1, 2, 9
+  BUSINESS   // $79/mo — Modules 1-6, 9
+  ENTERPRISE // $199/mo — All modules
+}
+
+enum DocumentType {
+  INVOICE    // Счёт
+  ACT        // Акт выполненных работ
+  CONTRACT   // Договор
+  RECEIPT    // Чек/квитанция
+  WAYBILL    // Накладная
+  UPD        // Универсальный передаточный документ
+  OTHER
+}
+
+enum DocStatus {
+  PENDING    // Uploaded, awaiting processing
+  PROCESSING // AI is working
+  PROCESSED  // AI completed extraction
+  VERIFIED   // Human verified
+  ERROR      // Processing failed
+}
+
+enum UserRole {
+  CEO              // Директор / полный доступ
+  MANAGER          // Руководитель
+  CHIEF_ACCOUNTANT // Главный бухгалтер
+  ACCOUNTANT_CLERK // Бухгалтерский клерк
+  WAREHOUSE_KEEPER // Складчик
+}
+
+enum AuthMethod {
+  CREDENTIALS  // Email + password
+  ONE_ID       // OneID Uzbekistan
+  ERI          // ЭЦП / ERI key
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum NotificationChannel {
+  EMAIL
+  TELEGRAM
+  SMS
+}
+
+// =============================================
+// CORE MODELS
+// =============================================
+
+model Organization {
+  id          String     @id @default(cuid())
+  name        String
+  inn         String     @unique
+  kpp         String?
+  address     String?
+  taxRegime   TaxRegime  @default(USN)
+  plan        Plan       @default(STARTER)
+  
+  // Settings
+  regulations     String?  // Company accounting policies text
+  travelPolicy    String?  // Travel expense policy text
+  telegramChatId  String?  // Linked Telegram group/chat
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  users           User[]
+  documents       Document[]
+  transactions    Transaction[]
+  contractors     Contractor[]
+  contracts       Contract[]
+  deadlines       Deadline[]
+  chatMessages    ChatMessage[]
+  expenses        Expense[]
+  notificationLogs NotificationLog[]
+  aiCallLogs      AiCallLog[]
+  reconciliations ReconciliationResult[]
+
+  @@map("organizations")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  passwordHash  String?
+  role          UserRole  @default(ACCOUNTANT_CLERK)
+  authMethod    AuthMethod @default(CREDENTIALS)
+  eriKeyData    String?   // ERI key info (public part)
+  oneIdSub      String?   @unique // OneID subject ID
+  telegramId    String?   @unique
+  createdById   String?   // CEO who created this user
+  
+  // NextAuth fields
+  emailVerified DateTime?
+  accounts      Account[]
+  sessions      Session[]
+
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("users")
+}
+
+// NextAuth adapter models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// =============================================
+// MODULE 1 & 2 — Documents & Reconciliation
+// =============================================
+
+model Document {
+  id            String       @id @default(cuid())
+  type          DocumentType @default(OTHER)
+  status        DocStatus    @default(PENDING)
+  
+  // File
+  fileUrl       String       // R2 or local path
+  fileName      String
+  fileSize      Int?
+  mimeType      String?
+
+  // AI-extracted data
+  extractedData Json?        // { contractor, amount, currency, date, number, ... }
+  tags          String[]     @default([])
+  
+  // Counterparty info (extracted)
+  contractorName String?
+  contractorInn  String?
+  amount         Decimal?
+  currency       String?     @default("RUB")
+  documentDate   DateTime?
+  documentNumber String?
+
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // Relations
+  reconciliationsAsAct      ReconciliationResult[] @relation("ReconciliationAct")
+  reconciliationsAsContract ReconciliationResult[] @relation("ReconciliationContract")
+  notificationLogs          NotificationLog[]
+
+  @@map("documents")
+}
+
+model Contract {
+  id          String   @id @default(cuid())
+  number      String?
+  subject     String?
+  amount      Decimal?
+  currency    String?  @default("RUB")
+  startDate   DateTime?
+  endDate     DateTime?
+  fileUrl     String?
+  rawText     String?  // Full text for AI comparison
+
+  contractorId String?
+  contractor   Contractor? @relation(fields: [contractorId], references: [id])
+  
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("contracts")
+}
+
+model ReconciliationResult {
+  id            String   @id @default(cuid())
+  status        String   // "ok" | "issues" | "error"
+  discrepancies Json?    // Array of discrepancy objects
+  questions     Json?    // Suggested questions for contractor
+  
+  actId         String?
+  act           Document? @relation("ReconciliationAct", fields: [actId], references: [id])
+  
+  contractId    String?
+  contract      Document? @relation("ReconciliationContract", fields: [contractId], references: [id])
+
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+
+  @@map("reconciliation_results")
+}
+
+// =============================================
+// MODULE 3 — AI Chatbot
+// =============================================
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  role      String   // "user" | "assistant" | "system"
+  content   String
+  sessionId String
+  
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+  @@map("chat_messages")
+}
+
+// =============================================
+// MODULE 6 — Bank Transactions & Reconciliation
+// =============================================
+
+model Transaction {
+  id          String   @id @default(cuid())
+  amount      Decimal
+  date        DateTime
+  description String
+  reference   String?  // Bank reference number
+  category    String?
+  matched     Boolean  @default(false)
+  matchedDocId String?
+
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@map("transactions")
+}
+
+// =============================================
+// MODULE 7 — Accounts Receivable & Reminders
+// =============================================
+
+model NotificationLog {
+  id         String              @id @default(cuid())
+  channel    NotificationChannel
+  recipient  String              // email or telegram chat id
+  subject    String?
+  body       String
+  level      Int?                 // escalation level 1-4
+  sent       Boolean             @default(false)
+  status     String?             // "SENT" | "FAILED" etc
+  sentAt     DateTime?
+  
+  documentId String?
+  document   Document? @relation(fields: [documentId], references: [id])
+  
+  contractorId String?
+  contractor   Contractor? @relation(fields: [contractorId], references: [id])
+
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now())
+
+  @@map("notification_logs")
+}
+
+// =============================================
+// MODULE 8 — Contractor Scoring
+// =============================================
+
+model Contractor {
+  id          String    @id @default(cuid())
+  inn         String
+  name        String
+  kpp         String?
+  address     String?
+  
+  // AI Scoring
+  score       Int?      // 0-100 reliability score
+  riskLevel   RiskLevel?
+  riskFlags   Json?     // ["mass_director", "tax_debts", "court_cases", "bankruptcy"]
+  scoredAt    DateTime?
+  
+  // Raw API data cache
+  fnsData     Json?
+  courtData   Json?
+  bankruptcyData Json?
+
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contracts   Contract[]
+  notificationLogs NotificationLog[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([inn, orgId])
+  @@map("contractors")
+}
+
+// =============================================
+// MODULE 9 — Tax Calendar
+// =============================================
+
+model Deadline {
+  id            String     @id @default(cuid())
+  name          String
+  description   String?
+  dueDate       DateTime
+  taxRegime     TaxRegime?
+  docsRequired  String[]   @default([])
+  reminderDays  Int[]      @default([14, 7, 1])
+  completed     Boolean    @default(false)
+  completedAt   DateTime?
+
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime   @default(now())
+
+  @@map("deadlines")
+}
+
+// =============================================
+// MODULE 10 — Travel Expenses
+// =============================================
+
+model Expense {
+  id          String   @id @default(cuid())
+  tripId      String
+  category    String   // "food" | "transport" | "accommodation" | "other"
+  amount      Decimal
+  currency    String   @default("RUB")
+  amountRub   Decimal? // converted amount
+  vendorName  String?
+  receiptDate DateTime?
+  vatAmount   Decimal?
+  imageUrl    String?
+  extractedData Json?
+  warning     String?  // Over-limit warning from AI
+  approved    Boolean  @default(false)
+
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@map("expenses")
+}
+
+// =============================================
+// SYSTEM — AI Call Logging
+// =============================================
+
+model AiCallLog {
+  id          String   @id @default(cuid())
+  model       String   // "claude-opus-4-5" etc
+  module      String   // which module triggered this
+  inputTokens  Int?
+  outputTokens Int?
+  costUsd     Float?
+  durationMs  Int?
+  success     Boolean  @default(true)
+  error       String?
+
+  orgId       String?
+  org         Organization? @relation(fields: [orgId], references: [id])
+
+  createdAt   DateTime @default(now())
+
+  @@map("ai_call_logs")
+}

@@ -1,0 +1,40 @@
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "module": "CommonJS",
+        "lib": [
+            "ES2020"
+        ],
+        "outDir": "./dist/apps/api",
+        "rootDir": "../../",
+        "composite": true,
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "resolveJsonModule": true,
+        "declaration": true,
+        "paths": {
+            "@buhai/ai": [
+                "../../packages/ai/src"
+            ],
+            "@buhai/integrations": [
+                "../../packages/integrations/src"
+            ]
+        }
+    },
+    "references": [
+        {
+            "path": "../../packages/ai"
+        },
+        {
+            "path": "../../packages/integrations"
+        }
+    ],
+    "include": [
+        "src/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist"
+    ]
+}
