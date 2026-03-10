@@ -3,11 +3,13 @@
     "version": "0.0.1",
     "scripts": {
         "dev": "tsx watch src/index.ts",
-        "build": "tsc",
+        "build": "tsc -b",
         "start": "node dist/index.js",
         "type-check": "tsc --noEmit"
     },
     "dependencies": {
+        "@buhai/ai": "*",
+        "@buhai/integrations": "*",
         "@anthropic-ai/sdk": "^0.24.3",
         "@prisma/client": "^5.14.0",
         "fastify": "^4.27.0",
