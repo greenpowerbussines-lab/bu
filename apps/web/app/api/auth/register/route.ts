@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { TaxRegime, UserRole } from '@prisma/client';
+import { Prisma, TaxRegime, UserRole } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 
@@ -95,6 +95,38 @@ export async function POST(req: Request) {
         );
     } catch (error) {
         console.error('[register POST]', error);
+
+        if (error instanceof Prisma.PrismaClientInitializationError) {
+            return NextResponse.json(
+                { error: 'Нет подключения к базе данных. Проверьте DATABASE_URL в Vercel.' },
+                { status: 503 },
+            );
+        }
+
+        if (error instanceof Prisma.PrismaClientKnownRequestError) {
+            if (error.code === 'P2021') {
+                return NextResponse.json(
+                    { error: 'Таблицы базы данных не созданы. Выполните prisma db push для production БД.' },
+                    { status: 500 },
+                );
+            }
+
+            if (error.code === 'P2002') {
+                return NextResponse.json(
+                    { error: 'Пользователь или организация с такими данными уже существует.' },
+                    { status: 400 },
+                );
+            }
+        }
+
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('invalid input value for enum') && message.includes('TaxRegime')) {
+            return NextResponse.json(
+                { error: 'В базе не обновлен список налоговых режимов. Обновите схему через prisma db push.' },
+                { status: 500 },
+            );
+        }
+
         return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 });
     }
 }
