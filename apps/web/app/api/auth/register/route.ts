@@ -26,6 +26,11 @@ function normalizeTelegramId(raw: string | undefined): string | null {
     return value || null;
 }
 
+function isTaxRegimeEnumMismatch(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('invalid input value for enum') && message.includes('TaxRegime');
+}
+
 export async function POST(req: Request) {
     try {
         const body = (await req.json()) as RegisterPayload;
@@ -62,29 +67,43 @@ export async function POST(req: Request) {
         }
 
         const passwordHash = await bcrypt.hash(password, 10);
-        const resolvedTaxRegime = resolveTaxRegime(body.taxRegime);
+        const selectedTaxRegime = resolveTaxRegime(body.taxRegime);
 
-        const createdUser = await prisma.$transaction(async (tx) => {
-            const org = await tx.organization.create({
-                data: {
-                    name: orgName,
-                    inn,
-                    taxRegime: resolvedTaxRegime,
-                },
-            });
+        const createUserWithTaxRegime = async (taxRegime: TaxRegime) => {
+            return prisma.$transaction(async (tx) => {
+                const org = await tx.organization.create({
+                    data: {
+                        name: orgName,
+                        inn,
+                        taxRegime,
+                    },
+                });
 
-            return tx.user.create({
-                data: {
-                    name: name || email,
-                    email,
-                    passwordHash,
-                    role: UserRole.CEO,
-                    authMethod: 'CREDENTIALS',
-                    telegramId,
-                    orgId: org.id,
-                },
+                return tx.user.create({
+                    data: {
+                        name: name || email,
+                        email,
+                        passwordHash,
+                        role: UserRole.CEO,
+                        authMethod: 'CREDENTIALS',
+                        telegramId,
+                        orgId: org.id,
+                    },
+                });
             });
-        });
+        };
+
+        let createdUser;
+        try {
+            createdUser = await createUserWithTaxRegime(selectedTaxRegime);
+        } catch (creationError) {
+            // Temporary compatibility fallback for old DB enum definitions.
+            if (selectedTaxRegime !== 'USN' && isTaxRegimeEnumMismatch(creationError)) {
+                createdUser = await createUserWithTaxRegime('USN');
+            } else {
+                throw creationError;
+            }
+        }
 
         return NextResponse.json(
             {
@@ -119,8 +138,7 @@ export async function POST(req: Request) {
             }
         }
 
-        const message = error instanceof Error ? error.message : String(error);
-        if (message.includes('invalid input value for enum') && message.includes('TaxRegime')) {
+        if (isTaxRegimeEnumMismatch(error)) {
             return NextResponse.json(
                 { error: 'В базе не обновлен список налоговых режимов. Обновите схему через prisma db push.' },
                 { status: 500 },
