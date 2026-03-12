@@ -1,9 +1,30 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
+
+type CredentialsForm = {
+    email: string;
+    password: string;
+};
+
+type TelegramForm = {
+    telegramId: string;
+    code: string;
+};
+
+function mapAuthError(code: string | null): string {
+    if (!code) return '';
+    if (code === 'AccessDenied') return 'Доступ запрещен для выбранного способа входа.';
+    if (code === 'OAuthSignin') return 'Ошибка входа через OAuth провайдера.';
+    if (code === 'OAuthCallback') return 'Ошибка callback от OAuth провайдера.';
+    if (code === 'OAuthCreateAccount') return 'Не удалось создать OAuth аккаунт.';
+    if (code === 'OAuthAccountNotLinked') return 'Этот email уже зарегистрирован другим способом входа.';
+    if (code === 'CredentialsSignin') return 'Неверный email, пароль или Telegram-код.';
+    return 'Не удалось выполнить вход. Попробуйте снова.';
+}
 
 export default function LoginPage() {
     return (
@@ -16,35 +37,104 @@ export default function LoginPage() {
 function LoginContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const registered = searchParams.get('registered');
-    const [loading, setLoading] = useState(false);
-    const [form, setForm] = useState({ email: '', password: '' });
-    const [error, setError] = useState('');
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const registered = searchParams.get('registered');
+    const resetDone = searchParams.get('reset');
+    const authErrorCode = searchParams.get('error');
+
+    const [credentialsForm, setCredentialsForm] = useState<CredentialsForm>({ email: '', password: '' });
+    const [telegramForm, setTelegramForm] = useState<TelegramForm>({ telegramId: '', code: '' });
+    const [loading, setLoading] = useState(false);
+    const [googleLoading, setGoogleLoading] = useState(false);
+    const [telegramSending, setTelegramSending] = useState(false);
+    const [telegramLoading, setTelegramLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [info, setInfo] = useState('');
+
+    const queryError = useMemo(() => mapAuthError(authErrorCode), [authErrorCode]);
+    const finalError = error || queryError;
+
+    const handleCredentialsLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError('');
+        setInfo('');
+
+        const res = await signIn('credentials', {
+            redirect: false,
+            email: credentialsForm.email,
+            password: credentialsForm.password,
+        });
+
+        setLoading(false);
+
+        if (res?.ok && !res.error) {
+            router.push('/dashboard');
+            return;
+        }
+
+        setError('Неверный email или пароль');
+    };
+
+    const handleGoogleLogin = async () => {
+        setGoogleLoading(true);
+        setError('');
+        setInfo('');
+        await signIn('google', { callbackUrl: '/dashboard' });
+    };
+
+    const handleSendTelegramCode = async () => {
+        if (!telegramForm.telegramId.trim()) {
+            setError('Введите Telegram ID');
+            return;
+        }
+
+        setTelegramSending(true);
+        setError('');
+        setInfo('');
 
         try {
-            const res = await signIn('credentials', {
-                redirect: false,
-                email: form.email,
-                password: form.password,
+            const res = await fetch('/api/auth/telegram/send-code', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ telegramId: telegramForm.telegramId }),
             });
+            const data = await res.json();
 
-            if (res?.ok && !res.error) {
-                router.push('/dashboard');
+            if (!res.ok) {
+                setError(data.error || 'Не удалось отправить код в Telegram');
                 return;
             }
 
-            setError('Неверный email или пароль');
-        } catch (err) {
-            console.error(err);
-            setError('Ошибка подключения к серверу');
+            setInfo(data.message || 'Код отправлен в Telegram.');
+        } catch (requestError) {
+            console.error(requestError);
+            setError('Ошибка отправки кода');
         } finally {
-            setLoading(false);
+            setTelegramSending(false);
         }
+    };
+
+    const handleTelegramLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setTelegramLoading(true);
+        setError('');
+        setInfo('');
+
+        const res = await signIn('telegram', {
+            redirect: false,
+            telegramId: telegramForm.telegramId,
+            code: telegramForm.code,
+        });
+
+        setTelegramLoading(false);
+
+        if (res?.ok && !res.error) {
+            router.push('/dashboard');
+            return;
+        }
+
+        setError('Неверный Telegram ID или код');
     };
 
     return (
@@ -59,21 +149,18 @@ function LoginContent() {
                     <section className="glass-card flex flex-col justify-between p-8">
                         <div>
                             <div className="flex items-center gap-3">
-                                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ffcc00] text-lg font-bold text-[#1d1d1f]">B</div>
+                                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ffcc00] text-lg font-bold text-[#1d1d1f]">
+                                    B
+                                </div>
                                 <div>
                                     <div className="text-lg font-semibold tracking-[-0.03em] text-foreground">BuhAI</div>
-                                    <div className="text-xs text-muted-foreground">Финансовый контур компании</div>
+                                    <div className="text-xs text-muted-foreground">Финансовая платформа</div>
                                 </div>
                             </div>
-                            <h1 className="mt-10 text-4xl font-bold tracking-[-0.05em] text-foreground">Вход в рабочее пространство</h1>
+                            <h1 className="mt-10 text-4xl font-bold tracking-[-0.05em] text-foreground">Вход в систему</h1>
                             <p className="mt-4 text-sm leading-7 text-muted-foreground">
-                                Дашборд, документы, налоговые риски и AI-ассистент доступны в одном интерфейсе.
+                                Доступные способы: Email + пароль, Google, Telegram-код.
                             </p>
-                        </div>
-
-                        <div className="mt-8 space-y-3 text-sm text-muted-foreground">
-                            <div className="rounded-2xl bg-white/70 p-4">Без кредитной карты на тестовый период</div>
-                            <div className="rounded-2xl bg-white/70 p-4">Интерфейс уже синхронизирован с новым дизайном</div>
                         </div>
                     </section>
 
@@ -81,45 +168,102 @@ function LoginContent() {
                         <div className="mb-8">
                             <div className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Авторизация</div>
                             <h2 className="mt-3 text-3xl font-bold tracking-[-0.04em] text-foreground">Войти в BuhAI</h2>
-                            <p className="mt-2 text-sm text-muted-foreground">Используйте корпоративную учётную запись.</p>
+                            <p className="mt-2 text-sm text-muted-foreground">Используйте удобный способ входа.</p>
                         </div>
 
                         {registered && (
                             <div className="mb-5 rounded-2xl bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700">
-                                ✅ Аккаунт CEO создан! Теперь войдите.
+                                Аккаунт успешно создан. Теперь выполните вход.
                             </div>
                         )}
-                        {error ? (
-                            <div className="mb-5 rounded-2xl bg-rose-500/10 px-4 py-3 text-sm text-rose-600">{error}</div>
+                        {resetDone && (
+                            <div className="mb-5 rounded-2xl bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700">
+                                Пароль обновлен. Войдите с новым паролем.
+                            </div>
+                        )}
+                        {finalError ? (
+                            <div className="mb-5 rounded-2xl bg-rose-500/10 px-4 py-3 text-sm text-rose-600">{finalError}</div>
                         ) : null}
+                        {info ? <div className="mb-5 rounded-2xl bg-sky-500/10 px-4 py-3 text-sm text-sky-700">{info}</div> : null}
 
-                        <form onSubmit={handleSubmit} className="space-y-4">
+                        <form onSubmit={handleCredentialsLogin} className="space-y-4">
                             <Field
                                 label="Email"
                                 type="email"
-                                value={form.email}
-                                onChange={(value) => setForm((prev) => ({ ...prev, email: value }))}
-                                placeholder="ivan@company.ru"
+                                value={credentialsForm.email}
+                                onChange={(value) => setCredentialsForm((prev) => ({ ...prev, email: value }))}
+                                placeholder="ceo@company.uz"
                             />
                             <Field
                                 label="Пароль"
                                 type="password"
-                                value={form.password}
-                                onChange={(value) => setForm((prev) => ({ ...prev, password: value }))}
+                                value={credentialsForm.password}
+                                onChange={(value) => setCredentialsForm((prev) => ({ ...prev, password: value }))}
                                 placeholder="Ваш пароль"
                             />
-
                             <button type="submit" disabled={loading} className="pill-button pill-button-primary w-full justify-center py-3">
-                                {loading ? 'Входим...' : 'Войти'}
+                                {loading ? 'Входим...' : 'Войти по email'}
                             </button>
                         </form>
 
-                        <p className="mt-6 text-sm text-muted-foreground">
-                            Нет аккаунта?{' '}
-                            <Link href="/register" className="font-medium text-primary hover:underline">
-                                Зарегистрироваться
+                        <div className="my-6 h-px w-full bg-black/10" />
+
+                        <button
+                            type="button"
+                            onClick={handleGoogleLogin}
+                            disabled={googleLoading}
+                            className="pill-button w-full justify-center border border-black/10 bg-white/80 py-3 hover:bg-white"
+                        >
+                            {googleLoading ? 'Переход...' : 'Войти через Google'}
+                        </button>
+
+                        <div className="my-6 h-px w-full bg-black/10" />
+
+                        <form onSubmit={handleTelegramLogin} className="space-y-4">
+                            <Field
+                                label="Telegram ID"
+                                type="text"
+                                value={telegramForm.telegramId}
+                                onChange={(value) => setTelegramForm((prev) => ({ ...prev, telegramId: value }))}
+                                placeholder="Например: 123456789"
+                            />
+                            <div className="flex gap-2">
+                                <Field
+                                    label="Код из Telegram"
+                                    type="text"
+                                    value={telegramForm.code}
+                                    onChange={(value) => setTelegramForm((prev) => ({ ...prev, code: value }))}
+                                    placeholder="6-значный код"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleSendTelegramCode}
+                                    disabled={telegramSending}
+                                    className="pill-button mt-7 h-[46px] whitespace-nowrap"
+                                >
+                                    {telegramSending ? 'Отправка...' : 'Отправить код'}
+                                </button>
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={telegramLoading}
+                                className="pill-button pill-button-primary w-full justify-center py-3"
+                            >
+                                {telegramLoading ? 'Проверяем...' : 'Войти через Telegram'}
+                            </button>
+                        </form>
+
+                        <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">
+                            <Link href="/forgot-password" className="font-medium text-primary hover:underline">
+                                Забыли пароль?
                             </Link>
-                        </p>
+                            <span>
+                                Нет аккаунта?{' '}
+                                <Link href="/register" className="font-medium text-primary hover:underline">
+                                    Регистрация
+                                </Link>
+                            </span>
+                        </div>
                     </section>
                 </div>
             </div>
@@ -149,7 +293,7 @@ function Field({
     placeholder: string;
 }) {
     return (
-        <label className="block">
+        <label className="block w-full">
             <span className="mb-2 block text-sm font-medium text-foreground">{label}</span>
             <input
                 type={type}
