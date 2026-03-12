@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { BrandLogo } from '@/components/layout/BrandLogo';
 
 const FEATURES = [
     { title: 'Архив документов', description: 'OCR, классификация и единый поиск по первичке, УПД, актам и счетам.' },
@@ -17,15 +18,7 @@ export default function LandingPage() {
                 </div>
 
                 <nav className="relative z-10 flex flex-wrap items-center justify-between gap-4 border-b border-black/5 pb-6">
-                    <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ffcc00] text-lg font-bold text-[#1d1d1f] shadow-[0_10px_24px_rgba(255,204,0,0.35)]">
-                            B
-                        </div>
-                        <div>
-                            <div className="text-lg font-semibold tracking-[-0.03em] text-foreground">BuhAI</div>
-                            <div className="text-xs text-muted-foreground">1C meets Apple</div>
-                        </div>
-                    </div>
+                    <BrandLogo className="duo-brand-landing" />
 
                     <div className="flex flex-wrap items-center gap-3">
                         <a href="#features" className="pill-button">

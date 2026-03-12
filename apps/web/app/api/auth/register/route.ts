@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { Prisma, TaxRegime, UserRole } from '@prisma/client';
 import bcrypt from 'bcryptjs';
@@ -26,6 +27,36 @@ function normalizeTelegramId(raw: string | undefined): string | null {
     return value || null;
 }
 
+function resolveOrgName(name: string, email: string, providedOrgName: string): string {
+    if (providedOrgName) return providedOrgName;
+    if (name) return `${name} Team`;
+    const emailPrefix = email.split('@')[0] || 'Team';
+    return `${emailPrefix} Team`;
+}
+
+function generateInnCandidate(): string {
+    const timestampTail = Date.now().toString().slice(-8);
+    const randomTail = crypto.randomInt(1000, 10000).toString();
+    return `${timestampTail}${randomTail}`.slice(0, 12);
+}
+
+async function ensureUniqueInn(preferredInn: string): Promise<string> {
+    const normalized = preferredInn.trim();
+    if (normalized) {
+        const existing = await prisma.organization.findUnique({ where: { inn: normalized } });
+        if (!existing) return normalized;
+        throw new Error('ORG_INN_EXISTS');
+    }
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        const candidate = generateInnCandidate();
+        const existing = await prisma.organization.findUnique({ where: { inn: candidate } });
+        if (!existing) return candidate;
+    }
+
+    throw new Error('INN_GENERATION_FAILED');
+}
+
 function isTaxRegimeEnumMismatch(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('invalid input value for enum') && message.includes('TaxRegime');
@@ -34,19 +65,21 @@ function isTaxRegimeEnumMismatch(error: unknown): boolean {
 export async function POST(req: Request) {
     try {
         const body = (await req.json()) as RegisterPayload;
+
         const name = (body.name || '').trim();
         const email = (body.email || '').trim().toLowerCase();
         const password = body.password || '';
         const orgName = (body.orgName || '').trim();
-        const inn = (body.inn || '').trim();
+        const preferredInn = (body.inn || '').trim();
+        const selectedTaxRegime = resolveTaxRegime(body.taxRegime);
         const telegramId = normalizeTelegramId(body.telegramId);
 
-        if (!email || !orgName || !inn) {
-            return NextResponse.json({ error: 'Заполните email, название компании и ИНН' }, { status: 400 });
+        if (!email) {
+            return NextResponse.json({ error: 'Введите email' }, { status: 400 });
         }
 
         if (!password || password.length < 8) {
-            return NextResponse.json({ error: 'Пароль CEO должен содержать минимум 8 символов' }, { status: 400 });
+            return NextResponse.json({ error: 'Пароль должен содержать минимум 8 символов' }, { status: 400 });
         }
 
         const existingByEmail = await prisma.user.findUnique({ where: { email } });
@@ -61,20 +94,25 @@ export async function POST(req: Request) {
             }
         }
 
-        const existingOrg = await prisma.organization.findUnique({ where: { inn } });
-        if (existingOrg) {
-            return NextResponse.json({ error: 'Организация с таким ИНН уже зарегистрирована' }, { status: 400 });
+        let resolvedInn: string;
+        try {
+            resolvedInn = await ensureUniqueInn(preferredInn);
+        } catch (innError) {
+            if (innError instanceof Error && innError.message === 'ORG_INN_EXISTS') {
+                return NextResponse.json({ error: 'Организация с таким ИНН уже зарегистрирована' }, { status: 400 });
+            }
+            throw innError;
         }
 
+        const resolvedOrgName = resolveOrgName(name, email, orgName);
         const passwordHash = await bcrypt.hash(password, 10);
-        const selectedTaxRegime = resolveTaxRegime(body.taxRegime);
 
         const createUserWithTaxRegime = async (taxRegime: TaxRegime) => {
             return prisma.$transaction(async (tx) => {
                 const org = await tx.organization.create({
                     data: {
-                        name: orgName,
-                        inn,
+                        name: resolvedOrgName,
+                        inn: resolvedInn,
                         taxRegime,
                     },
                 });
@@ -97,7 +135,7 @@ export async function POST(req: Request) {
         try {
             createdUser = await createUserWithTaxRegime(selectedTaxRegime);
         } catch (creationError) {
-            // Temporary compatibility fallback for old DB enum definitions.
+            // Keeps signup working when production DB still has old enum values.
             if (selectedTaxRegime !== 'USN' && isTaxRegimeEnumMismatch(creationError)) {
                 createdUser = await createUserWithTaxRegime('USN');
             } else {
@@ -107,7 +145,7 @@ export async function POST(req: Request) {
 
         return NextResponse.json(
             {
-                message: 'Аккаунт CEO создан успешно',
+                message: 'Аккаунт создан успешно',
                 userId: createdUser.id,
             },
             { status: 201 },
@@ -136,6 +174,13 @@ export async function POST(req: Request) {
                     { status: 400 },
                 );
             }
+        }
+
+        if (error instanceof Error && error.message === 'INN_GENERATION_FAILED') {
+            return NextResponse.json(
+                { error: 'Не удалось сгенерировать данные организации. Попробуйте еще раз.' },
+                { status: 500 },
+            );
         }
 
         if (isTaxRegimeEnumMismatch(error)) {

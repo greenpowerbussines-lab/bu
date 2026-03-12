@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { BrandLogo } from '@/components/layout/BrandLogo';
 import { canAccess } from '@/lib/roles';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -58,6 +59,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <div className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] bg-white/40">
                         <header className="flex flex-shrink-0 items-center justify-between gap-4 border-b border-black/5 px-6 py-5 backdrop-blur-sm md:px-8">
                             <div className="flex flex-wrap items-center gap-3">
+                                <BrandLogo href="/dashboard" compact />
                                 {user?.orgName && (
                                     <div className="rounded-full border border-black/5 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                         {user.orgName}
